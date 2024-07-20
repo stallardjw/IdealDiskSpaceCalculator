@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import messagebox
 import webbrowser
 import urllib.parse
+import time
+import math
 
 def convert_units(value, from_unit, to_unit):
     if from_unit == to_unit:
@@ -16,7 +18,7 @@ def calculate_additional_space(*args):
         total_space = convert_units(float(total_space_var.get()), total_space_unit_var.get(), "GB")
         current_free_space = convert_units(float(current_free_space_var.get()), current_space_unit_var.get(), "GB")
         current_used_space = total_space - current_free_space
-        current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.2f}")
+        current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.1f}")
 
         target_free_percentage = float(target_free_percentage_var.get()) if target_free_percentage_var.get() else None
 
@@ -31,8 +33,10 @@ def calculate_additional_space(*args):
 
             if additional_space_needed < 0:
                 additional_space_needed = 0
+            else:
+                additional_space_needed = math.ceil(additional_space_needed)
 
-            result += f"\nYou need to add {convert_units(additional_space_needed, 'GB', total_space_unit_var.get()):.2f} {total_space_unit_var.get()} to reach {target_free_percentage:.2f}% free space."
+            result += f"\nYou need to add {additional_space_needed:.0f} {total_space_unit_var.get()} to reach {target_free_percentage:.2f}% free space."
 
         result_var.set(result)
     except ValueError:
@@ -50,7 +54,7 @@ def on_free_space_change(*args):
         if current_used_space < 0:
             result_var.set("Free space cannot exceed total disk space.")
             return
-        current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.2f}")
+        current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.1f}")
         calculate_additional_space()
     except ValueError:
         result_var.set("Please enter valid numeric values.")
@@ -67,7 +71,7 @@ def on_used_space_change(*args):
         if current_free_space < 0:
             result_var.set("Used space cannot exceed total disk space.")
             return
-        current_free_space_var.set(f"{convert_units(current_free_space, 'GB', current_space_unit_var.get()):.2f}")
+        current_free_space_var.set(f"{convert_units(current_free_space, 'GB', current_space_unit_var.get()):.1f}")
         calculate_additional_space()
     except ValueError:
         result_var.set("Please enter valid numeric values.")
@@ -85,14 +89,14 @@ def on_total_space_change(*args):
             if current_used_space < 0:
                 result_var.set("Free space cannot exceed total disk space.")
                 return
-            current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.2f}")
+            current_used_space_var.set(f"{convert_units(current_used_space, 'GB', current_space_unit_var.get()):.1f}")
         elif current_used_space_var.get():
             current_used_space = convert_units(float(current_used_space_var.get()), current_space_unit_var.get(), "GB")
             current_free_space = total_space - current_used_space
             if current_free_space < 0:
                 result_var.set("Used space cannot exceed total disk space.")
                 return
-            current_free_space_var.set(f"{convert_units(current_free_space, 'GB', current_space_unit_var.get()):.2f}")
+            current_free_space_var.set(f"{convert_units(current_free_space, 'GB', current_space_unit_var.get()):.1f}")
         calculate_additional_space()
     except ValueError:
         result_var.set("Please enter valid numeric values.")
@@ -110,6 +114,17 @@ def clear_all():
     result_var.set("")
     total_space_unit_var.set("GB")
     current_space_unit_var.set("GB")
+
+def validate_input(new_value):
+    if not new_value:
+        return True
+    try:
+        float(new_value)
+        if new_value.count('.') <= 1:
+            return True
+    except ValueError:
+        return False
+    return False
 
 def generate_email():
     if not all([total_space_var.get(), current_free_space_var.get(), current_used_space_var.get(), target_free_percentage_var.get()]):
@@ -141,6 +156,8 @@ def generate_email():
 
         if additional_space_needed < 0:
             additional_space_needed = 0
+        else:
+            additional_space_needed = math.ceil(additional_space_needed)
 
         email_body = (
             "Hello,\n\n"
@@ -149,7 +166,7 @@ def generate_email():
             "Total Capacity: {}\n"
             "Total Used/Free: {} / {}\n"
             "Percent Used/Free: {:.2f}% / {:.2f}%\n\n"
-            "Adding {:.2f} {} will get the volume to {:.2f}% free space.\n\n"
+            "Adding {:.0f} {} will get the volume to {:.2f}% free space.\n\n"
             "Please let us know how you would like to proceed.\n\n"
             "Thank you"
         ).format(
@@ -185,6 +202,22 @@ def generate_email():
     submit_button = tk.Button(popup, text="Submit", font=("Arial", 12), command=submit_email_info)
     submit_button.grid(row=2, column=0, columnspan=2, pady=10)
 
+click_count = 0
+last_click_time = 0
+
+def check_easter_egg(event):
+    global click_count, last_click_time
+    current_time = time.time()
+    if current_time - last_click_time < 1:  
+        click_count += 1
+    else:
+        click_count = 1
+    last_click_time = current_time
+
+    if click_count >= 5:  
+        webbrowser.open("https://youtu.be/dQw4w9WgXcQ?autoplay=1")
+        click_count = 0  
+
 root = tk.Tk()
 root.title("Disk Space Calculator")
 root.geometry("600x650")
@@ -209,10 +242,13 @@ total_space_unit_var.trace("w", on_unit_change)
 current_space_unit_var = tk.StringVar(value="GB")
 current_space_unit_var.trace("w", on_unit_change)
 
+# Validate input to ensure only numbers with one decimal point are allowed
+vcmd = (root.register(validate_input), '%P')
+
 padx, pady = 10, 10
 
 tk.Label(root, text="Total Disk Space:", font=("Arial", 12)).grid(row=0, column=0, padx=padx, pady=pady, sticky="e")
-entry_total_space = tk.Entry(root, font=("Arial", 12), textvariable=total_space_var)
+entry_total_space = tk.Entry(root, font=("Arial", 12), textvariable=total_space_var, validate='key', validatecommand=vcmd)
 entry_total_space.grid(row=0, column=1, padx=padx, pady=pady, sticky="w")
 unit_frame_total = tk.Frame(root)
 unit_frame_total.grid(row=0, column=2, padx=padx, pady=pady, sticky="w")
@@ -220,11 +256,11 @@ tk.Radiobutton(unit_frame_total, text="GB", variable=total_space_unit_var, value
 tk.Radiobutton(unit_frame_total, text="TB", variable=total_space_unit_var, value="TB", font=("Arial", 12)).pack(side=tk.LEFT)
 
 tk.Label(root, text="Current Free Disk Space:", font=("Arial", 12)).grid(row=1, column=0, padx=padx, pady=pady, sticky="e")
-entry_current_free_space = tk.Entry(root, font=("Arial", 12), textvariable=current_free_space_var)
+entry_current_free_space = tk.Entry(root, font=("Arial", 12), textvariable=current_free_space_var, validate='key', validatecommand=vcmd)
 entry_current_free_space.grid(row=1, column=1, padx=padx, pady=pady, sticky="w")
 
 tk.Label(root, text="Current Used Disk Space:", font=("Arial", 12)).grid(row=2, column=0, padx=padx, pady=pady, sticky="e")
-entry_current_used_space = tk.Entry(root, font=("Arial", 12), textvariable=current_used_space_var)
+entry_current_used_space = tk.Entry(root, font=("Arial", 12), textvariable=current_used_space_var, validate='key', validatecommand=vcmd)
 entry_current_used_space.grid(row=2, column=1, padx=padx, pady=pady, sticky="w")
 
 unit_frame_current = tk.Frame(root)
@@ -233,7 +269,7 @@ tk.Radiobutton(unit_frame_current, text="GB", variable=current_space_unit_var, v
 tk.Radiobutton(unit_frame_current, text="TB", variable=current_space_unit_var, value="TB", font=("Arial", 12)).pack(side=tk.LEFT)
 
 tk.Label(root, text="Target Free Space Percentage (%):", font=("Arial", 12)).grid(row=3, column=0, padx=padx, pady=pady, sticky="e")
-entry_target_free_percentage = tk.Entry(root, font=("Arial", 12), textvariable=target_free_percentage_var)
+entry_target_free_percentage = tk.Entry(root, font=("Arial", 12), textvariable=target_free_percentage_var, validate='key', validatecommand=vcmd)
 entry_target_free_percentage.grid(row=3, column=1, padx=padx, pady=pady, sticky="w")
 
 instructions = (
@@ -257,8 +293,10 @@ clear_button.grid(row=6, column=0, columnspan=3, pady=10)
 generate_email_button = tk.Button(root, text="Generate Email", font=("Arial", 12), command=generate_email)
 generate_email_button.grid(row=7, column=0, columnspan=3, pady=10)
 
-tk.Label(root, text="Disk Space Calculator by Jonathan Stallard", font=("Arial", 10, "italic")).grid(row=8, column=0, columnspan=3, pady=(10, 0))
-tk.Label(root, text="Version 1.0", font=("Arial", 10, "italic")).grid(row=9, column=0, columnspan=3)
+author_label = tk.Label(root, text="Disk Space Calculator by Jonathan Stallard", font=("Arial", 10, "italic"), cursor="hand2")
+author_label.grid(row=8, column=0, columnspan=3, pady=(10, 0))
+author_label.bind("<Button-1>", check_easter_egg)
+tk.Label(root, text="Version 1.1", font=("Arial", 10, "italic")).grid(row=9, column=0, columnspan=3)
 
 # Run the main event loop
 root.mainloop()
