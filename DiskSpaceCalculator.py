@@ -6,11 +6,15 @@ import math
 import re
 
 ##################################################
+# Constants
+##################################################
+GB_PER_TB = 1024
+SUPPORTED_UNITS = ["GB", "TB"]
+
+##################################################
 # Model Definition
 ##################################################
 class DiskSpaceModel:
-    GB_PER_TB = 1024
-
     def __init__(self):
         # All values are stored internally in GB
         self.total_space_gb = 0.0
@@ -100,18 +104,18 @@ def convert_to_gb(value, unit):
     if unit == "GB":
         return value
     elif unit == "TB":
-        return value * DiskSpaceModel.GB_PER_TB
+        return value * GB_PER_TB
     else:
-        raise ValueError("Unsupported unit")
+        raise ValueError(f"Unsupported unit: {unit}")
 
 def convert_from_gb(value_gb, unit):
     """Converts value from GB to the specified unit."""
     if unit == "GB":
         return value_gb
     elif unit == "TB":
-        return value_gb / DiskSpaceModel.GB_PER_TB
+        return value_gb / GB_PER_TB
     else:
-        raise ValueError("Unsupported unit")
+        raise ValueError(f"Unsupported unit: {unit}")
 
 ##################################################
 # Controller Class
@@ -122,7 +126,7 @@ class DiskSpaceCalculatorApp:
         self.root.title("Disk Space Calculator")
         self.root.geometry("600x600")
         self.root.minsize(500, 500)
-        self.root.resizable(True, True)  # Allow window to be resizable
+        self.root.resizable(True, True)
 
         self.model = DiskSpaceModel()
 
@@ -181,21 +185,21 @@ class DiskSpaceCalculatorApp:
         ttk.Label(disk_frame, text="Total Disk Space:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         entry_total = ttk.Entry(disk_frame, textvariable=self.vars['total'], validate='key', validatecommand=vcmd)
         entry_total.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        combo_total = ttk.Combobox(disk_frame, textvariable=self.units['total'], values=["GB", "TB"], state="readonly", width=5)
+        combo_total = ttk.Combobox(disk_frame, textvariable=self.units['total'], values=SUPPORTED_UNITS, state="readonly", width=5)
         combo_total.grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         # Current Free Space
         ttk.Label(disk_frame, text="Current Free Space:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
         entry_free = ttk.Entry(disk_frame, textvariable=self.vars['free'], validate='key', validatecommand=vcmd)
         entry_free.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        combo_free = ttk.Combobox(disk_frame, textvariable=self.units['free'], values=["GB", "TB"], state="readonly", width=5)
+        combo_free = ttk.Combobox(disk_frame, textvariable=self.units['free'], values=SUPPORTED_UNITS, state="readonly", width=5)
         combo_free.grid(row=1, column=2, padx=5, pady=5, sticky="w")
 
         # Current Used Space
         ttk.Label(disk_frame, text="Current Used Space:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
         entry_used = ttk.Entry(disk_frame, textvariable=self.vars['used'], validate='key', validatecommand=vcmd)
         entry_used.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        combo_used = ttk.Combobox(disk_frame, textvariable=self.units['used'], values=["GB", "TB"], state="readonly", width=5)
+        combo_used = ttk.Combobox(disk_frame, textvariable=self.units['used'], values=SUPPORTED_UNITS, state="readonly", width=5)
         combo_used.grid(row=2, column=2, padx=5, pady=5, sticky="w")
 
         # Target Free Space Percentage
@@ -228,9 +232,9 @@ class DiskSpaceCalculatorApp:
         self.refreshing = False
 
         # Attach separate trace handlers using lambda functions
-        self.vars['total'].trace_add('write', lambda *args: self.on_total_change())
-        self.vars['free'].trace_add('write', lambda *args: self.on_free_change())
-        self.vars['used'].trace_add('write', lambda *args: self.on_used_change())
+        self.vars['total'].trace_add('write', lambda *args: self.on_space_change('total'))
+        self.vars['free'].trace_add('write', lambda *args: self.on_space_change('free'))
+        self.vars['used'].trace_add('write', lambda *args: self.on_space_change('used'))
         self.vars['target'].trace_add('write', lambda *args: self.on_target_change())
 
         self.units['total'].trace_add('write', lambda *args: self.on_unit_change('total'))
@@ -241,89 +245,36 @@ class DiskSpaceCalculatorApp:
         """Allow only digits and a single decimal point."""
         return bool(re.match(r'^\d*\.?\d*$', new_value))
 
-    def on_total_change(self):
+    def on_space_change(self, space_type):
         if self.refreshing:
             return
         self.refreshing = True
+
+        space_val = safe_float(self.vars[space_type].get())
         total_val = safe_float(self.vars['total'].get())
-        if total_val is not None:
-            try:
-                total_gb = convert_to_gb(total_val, self.units['total'].get())
-                self.model.set_total_space_gb(total_gb)
-            except ValueError:
-                messagebox.showerror("Unit Error", "Unsupported unit for Total Disk Space.")
+
+        if space_val is not None and total_val is not None:
+            space_gb = convert_to_gb(space_val, self.units[space_type].get())
+            total_gb = convert_to_gb(total_val, self.units['total'].get())
+
+            if space_gb > total_gb:
+                self.update_result_display(f"Error: {space_type.capitalize()} space cannot exceed Total Disk Space.")
                 self.refreshing = False
                 return
 
-            # If Free is set, ensure it's not exceeding Total
-            free_val = safe_float(self.vars['free'].get())
-            if free_val is not None:
-                free_gb = convert_to_gb(free_val, self.units['free'].get())
-                if free_gb > total_gb:
-                    self.update_result_display("Error: Free space cannot exceed Total Disk Space.")
-                    self.refreshing = False
-                    return
-                self.model.set_free_space_gb(free_gb)
-                # Update Used
+            if space_type == 'total':
+                self.model.set_total_space_gb(space_gb)
+            elif space_type == 'free':
+                self.model.set_free_space_gb(space_gb)
                 used_gb = self.model.get_used_space_gb()
                 used_display = convert_from_gb(used_gb, self.units['used'].get())
                 self.vars['used'].set(f"{used_display:.2f}")
-
-            # If Used is set, ensure it's not exceeding Total
-            used_val = safe_float(self.vars['used'].get())
-            if used_val is not None:
-                used_gb = convert_to_gb(used_val, self.units['used'].get())
-                if used_gb > total_gb:
-                    self.update_result_display("Error: Used space cannot exceed Total Disk Space.")
-                    self.refreshing = False
-                    return
-                self.model.set_free_space_gb(self.model.total_space_gb - used_gb)
-                # Update Free
-                free_gb = self.model.current_free_space_gb
+            elif space_type == 'used':
+                free_gb = total_gb - space_gb
+                self.model.set_free_space_gb(free_gb)
                 free_display = convert_from_gb(free_gb, self.units['free'].get())
                 self.vars['free'].set(f"{free_display:.2f}")
 
-        self.update_results()
-        self.refreshing = False
-
-    def on_free_change(self):
-        if self.refreshing:
-            return
-        self.refreshing = True
-        free_val = safe_float(self.vars['free'].get())
-        total_val = safe_float(self.vars['total'].get())
-        if free_val is not None and total_val is not None:
-            free_gb = convert_to_gb(free_val, self.units['free'].get())
-            if free_gb > convert_to_gb(total_val, self.units['total'].get()):
-                self.update_result_display("Error: Free space cannot exceed Total Disk Space.")
-                self.refreshing = False
-                return
-            self.model.set_free_space_gb(free_gb)
-            # Update Used
-            used_gb = self.model.get_used_space_gb()
-            used_display = convert_from_gb(used_gb, self.units['used'].get())
-            self.vars['used'].set(f"{used_display:.2f}")
-        self.update_results()
-        self.refreshing = False
-
-    def on_used_change(self):
-        if self.refreshing:
-            return
-        self.refreshing = True
-        used_val = safe_float(self.vars['used'].get())
-        total_val = safe_float(self.vars['total'].get())
-        if used_val is not None and total_val is not None:
-            used_gb = convert_to_gb(used_val, self.units['used'].get())
-            if used_gb > convert_to_gb(total_val, self.units['total'].get()):
-                self.update_result_display("Error: Used space cannot exceed Total Disk Space.")
-                self.refreshing = False
-                return
-            # Set free space as total - used
-            free_gb = self.model.total_space_gb - used_gb
-            self.model.set_free_space_gb(free_gb)
-            # Update Free
-            free_display = convert_from_gb(free_gb, self.units['free'].get())
-            self.vars['free'].set(f"{free_display:.2f}")
         self.update_results()
         self.refreshing = False
 
@@ -519,7 +470,7 @@ class DiskSpaceCalculatorApp:
         """Display the About information."""
         about_text = (
             "Disk Space Calculator\n"
-            "Version 1.7\n\n"
+            "Version 1.8\n\n"
             "Calculates additional space needed to reach a desired free space percentage.\n\n"
             "Built by Jonathan Stallard\n"
         )
@@ -532,4 +483,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = DiskSpaceCalculatorApp(root)
     root.mainloop()
-    
