@@ -85,7 +85,8 @@ def make_email_body(server_name, volume_name, model, total_unit, free_unit, used
         f"Total Capacity: {total_str}\n"
         f"Total Used/Free: {used_str} / {free_str}\n"
         f"Percent Used/Free: {used_pct:.2f}% / {free_pct:.2f}%\n\n"
-        f"Adding {additional_str} will get the volume to {target_perc:.2f}% free space.\n\n"
+        f"Adding or Clearing {additional_str} will get the volume to {target_perc:.2f}% free space.\n\n"
+        f"Would you like us to run clean up tools or add additional space?\n\n"
         "Please let us know how you would like to proceed.\n\n"
         "Thank you"
     )
@@ -423,21 +424,23 @@ class DiskSpaceCalculatorApp:
         def submit_email_info():
             server_name = entry_server_name_popup.get().strip()
             volume_name = entry_volume_name_popup.get().strip()
+            client_abbreviation = entry_client_abbreviation_popup.get().strip()
 
-            if not server_name or not volume_name:
-                messagebox.showerror("Input Error", "Please fill in both server and volume names.")
+            if not server_name or not volume_name or not client_abbreviation:
+                messagebox.showerror("Input Error", "Please fill in all fields: server name, volume name, and client abbreviation.")
                 return
 
             email_body = make_email_body(server_name, volume_name, self.model, self.units['total'].get(), self.units['free'].get(), self.units['used'].get())
-            subject = f"Low Disk Space Alert on {server_name} Volume {volume_name}"
+            subject = f"[{client_abbreviation}] Low Disk Space Alert on {server_name} Volume {volume_name}"
             mailto_link = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(email_body)}"
             webbrowser.open(mailto_link)
             popup.destroy()
 
+
         # Create popup window
         popup = tk.Toplevel(self.root)
         popup.title("Enter Server and Volume Information")
-        popup.geometry("450x200")
+        popup.geometry("450x300")
         popup.resizable(False, False)
 
         # Center the popup window
@@ -459,9 +462,14 @@ class DiskSpaceCalculatorApp:
         entry_volume_name_popup = ttk.Entry(pframe, width=30)
         entry_volume_name_popup.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
 
+        # Client Abbreviation
+        ttk.Label(pframe, text="Client Abbreviation:").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        entry_client_abbreviation_popup = ttk.Entry(pframe, width=30)
+        entry_client_abbreviation_popup.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
+
         # Submit Button
         submit_button = ttk.Button(pframe, text="Submit", command=submit_email_info)
-        submit_button.grid(row=2, column=0, columnspan=2, pady=20)
+        submit_button.grid(row=3, column=0, columnspan=2, pady=20)
 
         # Configure grid weights for pframe
         pframe.columnconfigure(1, weight=1)
@@ -470,7 +478,7 @@ class DiskSpaceCalculatorApp:
         """Display the About information."""
         about_text = (
             "Disk Space Calculator\n"
-            "Version 1.8\n\n"
+            "Version 1.9\n\n"
             "Calculates additional space needed to reach a desired free space percentage.\n\n"
             "Built by Jonathan Stallard\n"
         )
