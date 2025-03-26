@@ -62,35 +62,6 @@ class DiskSpaceModel:
 ##################################################
 # Helper Functions
 ##################################################
-def make_email_body(server_name, volume_name, model, total_unit, free_unit, used_unit):
-    used_gb = model.get_used_space_gb()
-    free_gb = model.current_free_space_gb
-
-    total_str = f"{convert_from_gb(model.total_space_gb, total_unit):.2f} {total_unit}"
-    free_str = f"{convert_from_gb(free_gb, free_unit):.2f} {free_unit}"
-    used_str = f"{convert_from_gb(used_gb, used_unit):.2f} {used_unit}"
-
-    free_pct = model.get_free_percentage()
-    used_pct = model.get_used_percentage()
-
-    additional_needed_gb = model.get_additional_space_needed_gb()
-    additional_str = f"{additional_needed_gb} GB" if additional_needed_gb else "0 GB"
-
-    target_perc = model.target_free_percentage if model.target_free_percentage else 0.0
-
-    return (
-        "Hello,\n\n"
-        f"We received an alert for low space on {server_name} Volume {volume_name}\n\n"
-        "Current volume details:\n"
-        f"Total Capacity: {total_str}\n"
-        f"Total Used/Free: {used_str} / {free_str}\n"
-        f"Percent Used/Free: {used_pct:.2f}% / {free_pct:.2f}%\n\n"
-        f"Adding or Clearing {additional_str} will get the volume to {target_perc:.2f}% free space.\n\n"
-        f"Would you like us to run clean up tools or add additional space?\n\n"
-        "Please let us know how you would like to proceed.\n\n"
-        "Thank you"
-    )
-
 def safe_float(s):
     s = s.strip()
     if s == '' or s == '.':
@@ -117,6 +88,43 @@ def convert_from_gb(value_gb, unit):
         return value_gb / GB_PER_TB
     else:
         raise ValueError(f"Unsupported unit: {unit}")
+
+def make_email_body(server_name, volume_name, model, total_unit, free_unit, used_unit, cleanup_ran=False):
+    
+    used_gb = model.get_used_space_gb()
+    free_gb = model.current_free_space_gb
+
+    total_str = f"{convert_from_gb(model.total_space_gb, total_unit):.2f} {total_unit}"
+    free_str = f"{convert_from_gb(free_gb, free_unit):.2f} {free_unit}"
+    used_str = f"{convert_from_gb(used_gb, used_unit):.2f} {used_unit}"
+
+    free_pct = model.get_free_percentage()
+    used_pct = model.get_used_percentage()
+
+    additional_needed_gb = model.get_additional_space_needed_gb()
+    additional_str = f"{additional_needed_gb} GB" if additional_needed_gb else "0 GB"
+
+    target_perc = model.target_free_percentage if model.target_free_percentage else 0.0
+
+    # Status line changes based on the checkbox
+    status_line = (
+        "After running cleanup tools, we were unable to free enough space to clear the alert.\n\n"
+        if cleanup_ran else
+        "Would you like us to run clean up tools or add additional space?\n\n"
+    )
+
+    return (
+        "Hello,\n\n"
+        f"We received an alert for low space on {server_name} Volume {volume_name}\n\n"
+        "Current volume details:\n"
+        f"Total Capacity: {total_str}\n"
+        f"Total Used/Free: {used_str} / {free_str}\n"
+        f"Percent Used/Free: {used_pct:.2f}% / {free_pct:.2f}%\n\n"
+        f"{status_line}"
+        f"Adding or Clearing {additional_str} will get the volume to {target_perc:.2f}% free space.\n\n"
+        "Please let us know how you would like to proceed.\n\n"
+        "Thank you"
+    )
 
 ##################################################
 # Controller Class
@@ -398,6 +406,13 @@ class DiskSpaceCalculatorApp:
         self.result_text.insert(tk.END, result_text)
         self.result_text.config(state="disabled")
 
+    def update_result_display(self, message):
+        """Helper function to display error or other messages in the result area."""
+        self.result_text.config(state="normal")
+        self.result_text.delete("1.0", tk.END)
+        self.result_text.insert(tk.END, message)
+        self.result_text.config(state="disabled")
+
     def clear_all(self):
         """Clear all input fields and results."""
         self.refreshing = True
@@ -426,28 +441,38 @@ class DiskSpaceCalculatorApp:
             volume_name = entry_volume_name_popup.get().strip()
             client_abbreviation = entry_client_abbreviation_popup.get().strip()
 
+            # This boolean indicates whether the user checked the 'cleanup tools ran' box
+            cleanup_ran = cleanup_var.get()
+
             if not server_name or not volume_name or not client_abbreviation:
                 messagebox.showerror("Input Error", "Please fill in all fields: server name, volume name, and client abbreviation.")
                 return
 
-            email_body = make_email_body(server_name, volume_name, self.model, self.units['total'].get(), self.units['free'].get(), self.units['used'].get())
+            email_body = make_email_body(
+                server_name, 
+                volume_name, 
+                self.model, 
+                self.units['total'].get(), 
+                self.units['free'].get(), 
+                self.units['used'].get(),
+                cleanup_ran=cleanup_ran  # Pass the new flag here
+            )
             subject = f"[{client_abbreviation}] Low Disk Space Alert on {server_name} Volume {volume_name}"
             mailto_link = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(email_body)}"
             webbrowser.open(mailto_link)
             popup.destroy()
 
-
         # Create popup window
         popup = tk.Toplevel(self.root)
         popup.title("Enter Server and Volume Information")
-        popup.geometry("450x300")
+        popup.geometry("450x320")
         popup.resizable(False, False)
 
         # Center the popup window
         popup.update_idletasks()
         x = (popup.winfo_screenwidth() - popup.winfo_reqwidth()) // 2
         y = (popup.winfo_screenheight() - popup.winfo_reqheight()) // 2
-        popup.geometry("+{}+{}".format(x, y))
+        popup.geometry(f"+{x}+{y}")
 
         pframe = ttk.Frame(popup, padding="20")
         pframe.pack(expand=True, fill="both")
@@ -467,9 +492,13 @@ class DiskSpaceCalculatorApp:
         entry_client_abbreviation_popup = ttk.Entry(pframe, width=30)
         entry_client_abbreviation_popup.grid(row=2, column=1, padx=10, pady=10, sticky="ew")
 
+        # Checkbutton for "Already ran cleanup tools"
+        cleanup_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(pframe, text="Already ran cleanup tools", variable=cleanup_var).grid(row=3, column=0, columnspan=2, pady=5)
+
         # Submit Button
         submit_button = ttk.Button(pframe, text="Submit", command=submit_email_info)
-        submit_button.grid(row=3, column=0, columnspan=2, pady=20)
+        submit_button.grid(row=4, column=0, columnspan=2, pady=20)
 
         # Configure grid weights for pframe
         pframe.columnconfigure(1, weight=1)
@@ -478,7 +507,7 @@ class DiskSpaceCalculatorApp:
         """Display the About information."""
         about_text = (
             "Disk Space Calculator\n"
-            "Version 1.9\n\n"
+            "Version 1.10\n\n"
             "Calculates additional space needed to reach a desired free space percentage.\n\n"
             "Built by Jonathan Stallard\n"
         )
